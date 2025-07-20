@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: email-scraper
+    env: python
+    plan: free            # 750 h/mois avant pause automatique
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn -w 2 -k gthread -b 0.0.0.0:$PORT app:app"
+    envVars:
+      - key: API_TOKEN    # si tu utilises l’auth par header
+        value: "<ton_token_secret>" 
