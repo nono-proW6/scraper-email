@@ -14,7 +14,16 @@ EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 HEADERS = {"User-Agent": "Mozilla/5.0 EmailBot/1.0"}
 
 # Mots‑clés priorisés dans les chemins
-KEYWORDS = ["contact", "mention", "legal", "email", "equipe", "team", "about", "support"]
+KEYWORDS = [
+    "contact",
+    "mention",
+    "legal",
+    "email",
+    "equipe",
+    "team",
+    "about",
+    "support",
+]
 
 # Extensions de fichiers à ignorer (assets/images/etc.)
 IGNORE_EXT = re.compile(r".*\.(jpg|jpeg|png|gif|svg|css|js|pdf|zip|mp4|avi)$", re.IGNORECASE)
@@ -39,8 +48,8 @@ def scrape():
     if API_TOKEN and request.headers.get("X-API-KEY") != API_TOKEN:
         return jsonify({"error": "unauthorized"}), 401
 
-    data      = request.get_json(force=True)
-    raw_url   = data.get("url", "").strip()
+    data = request.get_json(force=True)
+    raw_url = data.get("url", "").strip()
     max_pages = data.get("max_pages", 100)
     if not raw_url:
         return jsonify({"error": "url missing"}), 400
@@ -51,8 +60,8 @@ def scrape():
     base_netloc = urlparse(raw_url).netloc
 
     # Structures de crawl
-    to_visit     = [raw_url]
-    visited      = set()
+    to_visit = [raw_url]
+    visited = set()
     found_emails = set()
     pages_crawled = 0
 
@@ -87,23 +96,32 @@ def scrape():
         # Découverte de nouveaux liens internes, priorisés
         for a in soup.select("a[href]"):
             raw_link = a["href"]
-            norm     = normalize(raw_link, url)
-            if is_internal(norm, base_netloc) and norm not in visited and not IGNORE_EXT.match(norm):
+            norm = normalize(raw_link, url)
+            if (
+                is_internal(norm, base_netloc)
+                and norm not in visited
+                and not IGNORE_EXT.match(norm)
+            ):
                 path = urlparse(norm).path.lower()
                 if any(kw in path for kw in KEYWORDS):
-                    to_visit.insert(0, norm)   # priorité haute
+                    to_visit.insert(0, norm)  # priorité haute
                 else:
-                    to_visit.append(norm)      # priorité basse
+                    to_visit.append(norm)  # priorité basse
 
-        # Pause réduite pour aller plus vite
+        # Pause réduite pour ne pas surcharger le site
         time.sleep(random.uniform(0.2, 0.5))
 
-    return jsonify({
-        "start_url": raw_url,
-        "pages_crawled": pages_crawled,
-        "emails": sorted(found_emails)
-    })
+    return jsonify(
+        {
+            "start_url": raw_url,
+            "pages_crawled": pages_crawled,
+            "emails": sorted(found_emails),
+        }
+    )
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    # Render fournit le port à travers la variable d'environnement PORT.
+    # Par défaut, on utilise 5001 pour le développement local.
+    port = int(os.environ.get("PORT", 5001))
+    app.run(host="0.0.0.0", port=port)
