@@ -42,24 +42,13 @@ def is_internal(url, base_netloc):
     return (not p.netloc) or (p.netloc == base_netloc)
 
 
-@app.route("/scrape", methods=["POST"])
-def scrape():
-    # Auth (optionnel)
-    if API_TOKEN and request.headers.get("X-API-KEY") != API_TOKEN:
-        return jsonify({"error": "unauthorized"}), 401
-
-    data = request.get_json(force=True)
-    raw_url = data.get("url", "").strip()
-    max_pages = data.get("max_pages", 100)
-    if not raw_url:
-        return jsonify({"error": "url missing"}), 400
-
+def scrape_one(raw_url, max_pages=100):
+    """Scrape un seul site et retourne un dict avec emails et pages crawled."""
     # Normalisation de l'URL de départ
     if not urlparse(raw_url).scheme:
         raw_url = "https://" + raw_url
     base_netloc = urlparse(raw_url).netloc
 
-    # Structures de crawl
     to_visit = [raw_url]
     visited = set()
     found_emails = set()
@@ -71,14 +60,12 @@ def scrape():
             continue
         visited.add(url)
         pages_crawled += 1
-
         try:
             resp = requests.get(url, headers=HEADERS, timeout=8, allow_redirects=True)
             resp.raise_for_status()
         except Exception:
             continue
 
-        # Utilisation du parser Python natif pour éviter les dépendances C
         soup = bs4.BeautifulSoup(resp.text, "html.parser")
         text = soup.get_text(separator=" ")
 
@@ -94,7 +81,7 @@ def scrape():
         if found_emails:
             break
 
-        # Découverte de nouveaux liens internes, priorisés
+        # Découverte liens internes
         for a in soup.select("a[href]"):
             raw_link = a["href"]
             norm = normalize(raw_link, url)
@@ -105,24 +92,51 @@ def scrape():
             ):
                 path = urlparse(norm).path.lower()
                 if any(kw in path for kw in KEYWORDS):
-                    to_visit.insert(0, norm)  # priorité haute
+                    to_visit.insert(0, norm)
                 else:
-                    to_visit.append(norm)  # priorité basse
+                    to_visit.append(norm)
 
-        # Pause réduite pour ne pas surcharger le site
         time.sleep(random.uniform(0.2, 0.5))
 
-    return jsonify(
-        {
-            "start_url": raw_url,
-            "pages_crawled": pages_crawled,
-            "emails": sorted(found_emails),
-        }
-    )
+    return {"start_url": raw_url, "pages_crawled": pages_crawled, "emails": sorted(found_emails)}
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Endpoint de santé pour Render Cron ou UptimeRobot."""
+    return "OK", 200
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Endpoint de santé pour garder le service éveillé."""
+    return "OK", 200
+
+@app.route("/scrape", methods=["POST"])
+def scrape():
+    # Auth (optionnel)
+    if API_TOKEN and request.headers.get("X-API-KEY") != API_TOKEN:
+        return jsonify({"error": "unauthorized"}), 401
+
+    data = request.get_json(force=True)
+    # On accepte soit 'url' soit 'urls' (liste)
+    single = data.get("url")
+    multiple = data.get("urls")
+    max_pages = data.get("max_pages", 100)
+
+    if not single and not multiple:
+        return jsonify({"error": "url or urls missing"}), 400
+
+    results = []
+    if single:
+        results.append(scrape_one(single, max_pages))
+    else:
+        for u in multiple:
+            results.append(scrape_one(u, max_pages))
+
+    return jsonify(results)
 
 
 if __name__ == "__main__":
-    # Render fournit le port à travers la variable d'environnement PORT.
-    # Par défaut, on utilise 5001 pour le développement local.
     port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port)
