@@ -43,8 +43,7 @@ def is_internal(url, base_netloc):
 
 
 def scrape_one(raw_url, max_pages=100):
-    """Scrape un seul site et retourne un dict avec emails et pages crawled."""
-    # Normalisation de l'URL de départ
+    """Scrape un seul site et retourne un dict avec emails et pages_crawled."""
     if not urlparse(raw_url).scheme:
         raw_url = "https://" + raw_url
     base_netloc = urlparse(raw_url).netloc
@@ -69,7 +68,6 @@ def scrape_one(raw_url, max_pages=100):
         soup = bs4.BeautifulSoup(resp.text, "html.parser")
         text = soup.get_text(separator=" ")
 
-        # Extraction des e‑mails
         for m in EMAIL_RE.findall(text):
             found_emails.add(m)
         for a in soup.select("a[href^=mailto]"):
@@ -77,19 +75,12 @@ def scrape_one(raw_url, max_pages=100):
             if mail:
                 found_emails.add(mail)
 
-        # Si on a trouvé au moins un e‑mail, on arrête tout de suite
         if found_emails:
             break
 
-        # Découverte liens internes
         for a in soup.select("a[href]"):
-            raw_link = a["href"]
-            norm = normalize(raw_link, url)
-            if (
-                is_internal(norm, base_netloc)
-                and norm not in visited
-                and not IGNORE_EXT.match(norm)
-            ):
+            norm = normalize(a["href"], url)
+            if is_internal(norm, base_netloc) and norm not in visited and not IGNORE_EXT.match(norm):
                 path = urlparse(norm).path.lower()
                 if any(kw in path for kw in KEYWORDS):
                     to_visit.insert(0, norm)
@@ -103,38 +94,22 @@ def scrape_one(raw_url, max_pages=100):
 
 @app.route("/health", methods=["GET"])
 def health():
-    """Endpoint de santé pour Render Cron ou UptimeRobot."""
-    return "OK", 200
-
-
-@app.route("/health", methods=["GET"])
-def health():
     """Endpoint de santé pour garder le service éveillé."""
     return "OK", 200
 
 @app.route("/scrape", methods=["POST"])
 def scrape():
-    # Auth (optionnel)
     if API_TOKEN and request.headers.get("X-API-KEY") != API_TOKEN:
         return jsonify({"error": "unauthorized"}), 401
 
     data = request.get_json(force=True)
-    # On accepte soit 'url' soit 'urls' (liste)
-    single = data.get("url")
-    multiple = data.get("urls")
+    raw_url = data.get("url", "").strip()
     max_pages = data.get("max_pages", 100)
+    if not raw_url:
+        return jsonify({"error": "url missing"}), 400
 
-    if not single and not multiple:
-        return jsonify({"error": "url or urls missing"}), 400
-
-    results = []
-    if single:
-        results.append(scrape_one(single, max_pages))
-    else:
-        for u in multiple:
-            results.append(scrape_one(u, max_pages))
-
-    return jsonify(results)
+    result = scrape_one(raw_url, max_pages)
+    return jsonify(result)
 
 
 if __name__ == "__main__":
