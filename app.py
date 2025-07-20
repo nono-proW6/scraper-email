@@ -78,7 +78,8 @@ def scrape():
         except Exception:
             continue
 
-        soup = bs4.BeautifulSoup(resp.text, "lxml")
+        # Utilisation du parser Python natif pour éviter les dépendances C
+        soup = bs4.BeautifulSoup(resp.text, "html.parser")
         text = soup.get_text(separator=" ")
 
         # Extraction des e‑mails
